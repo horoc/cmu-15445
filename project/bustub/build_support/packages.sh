@@ -74,7 +74,7 @@ install_mac() {
     ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
   fi
   # Update Homebrew.
-  brew update
+  # brew update
   # Install packages.
   brew ls --versions cmake || brew install cmake
   brew ls --versions coreutils || brew install coreutils
