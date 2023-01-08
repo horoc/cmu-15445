@@ -186,8 +186,6 @@ class TrieNodeWithValue : public TrieNode {
   TrieNodeWithValue(TrieNode &&trieNode, T value) : TrieNode(std::move(trieNode)), value_(value) { is_end_ = true; }
 
   /**
-   * TODO(P0): Add implementation
-   *
    * @brief Construct a new TrieNodeWithValue. This is used when a new terminal node is constructed.
    *
    * You should:
@@ -296,8 +294,6 @@ class Trie {
   }
 
   /**
-   * TODO(P0): Add implementation
-   *
    * @brief Remove key value pair from the trie.
    * This function should also remove nodes that are no longer part of another
    * key. If key is empty or not found, return false.
@@ -312,11 +308,43 @@ class Trie {
    * @param key Key used to traverse the trie and find the correct node
    * @return True if the key exists and is removed, false otherwise
    */
-  bool Remove(const std::string &key) { return false; }
+  bool Remove(const std::string &key) {
+    if (key.empty()) {
+      return false;
+    }
+
+    std::vector<TrieNode *> v;
+    v.push_back(root_.get());
+    std::unique_ptr<TrieNode> *cur = &root_;
+    for (size_t i = 0; i < key.size(); i++) {
+      auto child = cur->get()->GetChildNode(key[i]);
+      if (child == nullptr) {
+        return false;
+      } else {
+        if (i == key.size() - 1 && !child->get()->IsEndNode()) {
+          return false;
+        }
+        v.push_back(child->get());
+        cur = child;
+      }
+    }
+
+    TrieNode *child = cur->get();
+    child->SetEndNode(false);
+    while (!v.empty()) {
+      auto parent = v.back();
+      v.pop_back();
+      if (child->HasChildren() || child->IsEndNode()) {
+        return true;
+      }
+      parent->RemoveChildNode(child->GetKeyChar());
+      child = parent;
+    }
+
+    return true;
+  }
 
   /**
-   * TODO(P0): Add implementation
-   *
    * @brief Get the corresponding value of type T given its key.
    * If key is empty, set success to false.
    * If key does not exist in trie, set success to false.
