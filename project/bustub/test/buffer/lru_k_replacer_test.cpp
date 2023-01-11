@@ -40,6 +40,16 @@ TEST(LRUKReplacerTest, DISABLED_SampleTest) {
 
   // Scenario: Evict three pages from the replacer. Elements with max k-distance should be popped
   // first based on LRU.
+
+  // head: <6,1,f>, <5,1,t>, <4,1,t>, <3,1,t>, <2,1,t>, <1,1,t>
+  // head: <6,1,f>, <5,1,t>, <4,1,t>, <3,1,t>, <2,1,t>  | head: <1,2,t>
+  // evict
+  // head: <6,1,f>, <5,1,t>, <4,1,t>, <3,1,t> | head: <1,2,t>
+  // evict
+  // head: <6,1,f>, <5,1,t>, <4,1,t> | head: <1,2,t>
+  // evict
+  // head: <6,1,f>, <5,1,t>  | head: <1,2,t>
+
   int value;
   lru_replacer.Evict(&value);
   ASSERT_EQ(2, value);
@@ -48,6 +58,25 @@ TEST(LRUKReplacerTest, DISABLED_SampleTest) {
   lru_replacer.Evict(&value);
   ASSERT_EQ(4, value);
   ASSERT_EQ(2, lru_replacer.Size());
+
+  // RecordAccess 3
+  // head: <3,1,f>, <6,1,f>, <5,1,t>  | head: <1,2,t>
+  // RecordAccess 4
+  // head: <4,1,f>, <3,1,f>, <6,1,f>, <5,1,t>  | head: <1,2,t>
+  // RecordAccess 5
+  // head: <4,1,f>, <3,1,f>, <6,1,f>, | head: <5,2,t>, <1,2,t>
+  // RecordAccess 4
+  // head: <3,1,f>, <6,1,f> | head: <4,2,f>, <5,2,t>, <1,2,t>
+  // set evicetable
+  // head: <3,1,t>, <6,1,f> | head: <4,2,t>, <5,2,t>, <1,2,t>
+  // evict
+  // head: <6,1,f> | head: <4,2,t>, <5,2,t>, <1,2,t>
+  // evict
+  // head: head: <4,2,t>, <5,2,t>, <1,2,t>
+  // set evict false
+  // head: head: <4,2,t>, <5,2,t>, <1,2,f>
+  // evict
+  // head: head: <4,2,t>, <1,2,f>
 
   // Scenario: Now replacer has frames [5,1].
   // Insert new frames 3, 4, and update access history for 5. We should end with [3,1,5,4]
