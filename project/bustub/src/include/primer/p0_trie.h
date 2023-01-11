@@ -263,6 +263,8 @@ class Trie {
       return false;
     }
 
+    latch_.WLock();
+    bool success = false;
     std::unique_ptr<TrieNode> *cur = &root_;
     for (size_t i = 0; i < key.size(); i++) {
       char c = key[i];
@@ -271,7 +273,8 @@ class Trie {
         if (i == key.size() - 1) {
           TrieNodeWithValue<T> *node = new TrieNodeWithValue<T>(TrieNode(c), value);
           cur->get()->InsertChildNode(c, std::unique_ptr<TrieNodeWithValue<T>>(node));
-          return true;
+          success = true;
+          break;
         } else {
           TrieNode *node = new TrieNode(c);
           cur = cur->get()->InsertChildNode(c, std::unique_ptr<TrieNode>(node));
@@ -279,18 +282,20 @@ class Trie {
       } else {
         if (i == key.size() - 1) {
           if ((*child)->IsEndNode()) {
-            return false;
+            break;
           }
           TrieNodeWithValue<T> *node = new TrieNodeWithValue<T>(std::move(*(child->get())), value);
           child->reset(node);
-          return true;
+          success = true;
+          break;
         } else {
           cur = child;
         }
       }
     }
 
-    return true;
+    latch_.WUnlock();
+    return success;
   }
 
   /**
@@ -313,15 +318,18 @@ class Trie {
       return false;
     }
 
+    latch_.WLock();
     std::vector<TrieNode *> v;
     v.push_back(root_.get());
     std::unique_ptr<TrieNode> *cur = &root_;
     for (size_t i = 0; i < key.size(); i++) {
       auto child = cur->get()->GetChildNode(key[i]);
       if (child == nullptr) {
+        latch_.WUnlock();
         return false;
       } else {
         if (i == key.size() - 1 && !child->get()->IsEndNode()) {
+          latch_.WUnlock();
           return false;
         }
         v.push_back(child->get());
@@ -335,12 +343,14 @@ class Trie {
       auto parent = v.back();
       v.pop_back();
       if (child->HasChildren() || child->IsEndNode()) {
+        latch_.WUnlock();
         return true;
       }
       parent->RemoveChildNode(child->GetKeyChar());
       child = parent;
     }
 
+    latch_.WUnlock();
     return true;
   }
 
@@ -367,11 +377,13 @@ class Trie {
       return {};
     }
 
+    latch_.RLock();
     std::unique_ptr<TrieNode> *cur = &root_;
     for (size_t i = 0; i < key.size(); i++) {
       char c = key[i];
       std::unique_ptr<TrieNode> *child = (*cur)->GetChildNode(c);
       if (child == nullptr) {
+        latch_.RUnlock();
         return {};
       } else {
         cur = child;
@@ -380,9 +392,11 @@ class Trie {
 
     if (cur->get()->IsEndNode()) {
       *success = true;
+      latch_.RUnlock();
       return dynamic_cast<TrieNodeWithValue<T> *>(cur->get())->GetValue();
     }
 
+    latch_.RUnlock();
     return {};
   }
 };
