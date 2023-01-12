@@ -23,6 +23,76 @@
 
 namespace bustub {
 
+struct Node {
+  typedef std::shared_ptr<Node> Ptr;
+  Node(frame_id_t frame_id) : frame_id_(frame_id){};
+  frame_id_t frame_id_;
+  size_t frequence_{0};
+  bool in_cache_;
+  bool evictable_;
+  Ptr prev_;
+  Ptr next_;
+};
+
+class List {
+ public:
+  List() : head_(new Node(0)) {}
+  Node::Ptr getHead() { return head_->next_; }
+
+  int size() { return size_; }
+
+  void remove(Node::Ptr node) {
+    if (node == tail_) {
+      tail_ = node->prev_;
+    }
+
+    node->prev_->next_ = node->next_;
+    if (node->next_ != nullptr) {
+      node->next_->prev_ = node->prev_;
+    }
+    node->prev_ = nullptr;
+    node->next_ = nullptr;
+    size_--;
+  }
+
+  Node::Ptr removeLastEvictableNode() {
+    if (size_ == 0) {
+      return nullptr;
+    }
+
+    Node::Ptr cur = tail_;
+    while (cur != head_) {
+      if (cur->evictable_) {
+        remove(cur);
+        size_--;
+        return cur;
+      }
+      cur = cur->prev_;
+    }
+    return nullptr;
+  }
+
+  void push_front(Node::Ptr node) {
+    node->next_ = head_->next_;
+    if (node->next_ != nullptr) {
+      node->next_->prev_ = node;
+    }
+
+    head_->next_ = node;
+    node->prev_ = head_;
+
+    if (node->next_ == nullptr) {
+      tail_ = node;
+    }
+    size_++;
+  }
+
+ private:
+  int size_;
+  Node::Ptr head_;
+  Node::Ptr tail_;
+};
+
 /**
  * LRUKReplacer implements the LRU-k replacement policy.
  *
@@ -135,11 +205,14 @@ class LRUKReplacer {
  private:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
-  [[maybe_unused]] size_t current_timestamp_{0};
-  [[maybe_unused]] size_t curr_size_{0};
-  [[maybe_unused]] size_t replacer_size_;
-  [[maybe_unused]] size_t k_;
+  // [[maybe_unused]] size_t current_timestamp_{0};
+  size_t curr_size_{0};
+  size_t replacer_size_;
+  size_t k_;
+  std::unordered_map<frame_id_t, Node::Ptr> m_;
   std::mutex latch_;
+  List history_;
+  List cache_;
 };
 
 }  // namespace bustub
