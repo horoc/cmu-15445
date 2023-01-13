@@ -107,9 +107,6 @@ class List {
 class LRUKReplacer {
  public:
   /**
-   *
-   * TODO(P1): Add implementation
-   *
    * @brief a new LRUKReplacer.
    * @param num_frames the maximum number of frames the LRUReplacer will be required to store
    */
@@ -118,15 +115,11 @@ class LRUKReplacer {
   DISALLOW_COPY_AND_MOVE(LRUKReplacer);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Destroys the LRUReplacer.
    */
   ~LRUKReplacer() = default;
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Find the frame with largest backward k-distance and evict that frame. Only frames
    * that are marked as 'evictable' are candidates for eviction.
    *
@@ -143,8 +136,6 @@ class LRUKReplacer {
   auto Evict(frame_id_t *frame_id) -> bool;
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Record the event that the given frame id is accessed at current timestamp.
    * Create a new entry for access history if frame id has not been seen before.
    *
@@ -156,8 +147,6 @@ class LRUKReplacer {
   void RecordAccess(frame_id_t frame_id);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Toggle whether a frame is evictable or non-evictable. This function also
    * controls replacer's size. Note that size is equal to number of evictable entries.
    *
@@ -175,8 +164,6 @@ class LRUKReplacer {
   void SetEvictable(frame_id_t frame_id, bool set_evictable);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Remove an evictable frame from replacer, along with its access history.
    * This function should also decrement replacer's size if removal is successful.
    *
@@ -194,8 +181,6 @@ class LRUKReplacer {
   void Remove(frame_id_t frame_id);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Return replacer's size, which tracks the number of evictable frames.
    *
    * @return size_t
@@ -203,9 +188,6 @@ class LRUKReplacer {
   auto Size() -> size_t;
 
  private:
-  // TODO(student): implement me! You can replace these member variables as you like.
-  // Remove maybe_unused if you start using them.
-  // [[maybe_unused]] size_t current_timestamp_{0};
   size_t curr_size_{0};
   size_t replacer_size_;
   size_t k_;
