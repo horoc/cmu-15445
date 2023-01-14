@@ -29,11 +29,6 @@ BufferPoolManagerInstance::BufferPoolManagerInstance(size_t pool_size, DiskManag
   for (size_t i = 0; i < pool_size_; ++i) {
     free_list_.emplace_back(static_cast<int>(i));
   }
-
-  // TODO(students): remove this line after you have implemented the buffer pool manager
-  throw NotImplementedException(
-      "BufferPoolManager is not implemented yet. If you have finished implementing BPM, please remove the throw "
-      "exception line in `buffer_pool_manager_instance.cpp`.");
 }
 
 BufferPoolManagerInstance::~BufferPoolManagerInstance() {
@@ -42,9 +37,84 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
   delete replacer_;
 }
 
-auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * { return nullptr; }
+bool BufferPoolManagerInstance::GetPageFrameIdFromFreeListOrPool(frame_id_t *frame_id) {
+  if (!free_list_.empty()) {
+    *frame_id = free_list_.back();
+    free_list_.pop_back();
+  } else {
+    if (!replacer_->Evict(frame_id)) {
+      return false;
+    }
+  }
+  return true;
+}
 
-auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * { return nullptr; }
+auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
+  // get a new page from free list or evict from pool
+  frame_id_t frame_id;
+  if (!GetPageFrameIdFromFreeListOrPool(&frame_id)) {
+    return nullptr;
+  }
+
+  // flush if dirty
+  Page *pg = pages_ + frame_id;
+  if (pages_->IsDirty()) {
+    disk_manager_->WritePage(pages_->page_id_, pages_->GetData());
+  }
+
+  // reset data
+  replacer_->Remove(frame_id);
+  page_table_->Remove(pg->page_id_);
+  pg->ResetMemory();
+  pg->page_id_ = AllocatePage();
+  page_table_->Insert(pg->page_id_, frame_id);
+
+  // pin
+  pg->pin_count_ = 1;
+  replacer_->RecordAccess(frame_id);
+  replacer_->SetEvictable(frame_id, false);
+
+  *page_id = pg->page_id_;
+  return pg;
+}
+
+auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
+  frame_id_t frame_id;
+  if (!page_table_->Find(page_id, frame_id)) {
+    if (!GetPageFrameIdFromFreeListOrPool(&frame_id)) {
+      return nullptr;
+    }
+
+    // flush if dirty
+    Page *pg = pages_ + frame_id;
+    if (pages_->IsDirty()) {
+      disk_manager_->WritePage(pages_->page_id_, pages_->GetData());
+    }
+
+    // read data
+    replacer_->Remove(frame_id);
+    page_table_->Remove(pg->page_id_);
+    disk_manager_->ReadPage(page_id, pg->GetData());
+    pg->page_id_ = page_id;
+    page_table_->Insert(pg->page_id_, frame_id);
+
+    // pin
+    pg->pin_count_ = 1;
+    replacer_->RecordAccess(frame_id);
+    replacer_->SetEvictable(frame_id, false);
+
+    // update table
+    page_table_->Insert(pg->page_id_, frame_id);
+    return pg;
+  } else {
+    Page *pg = pages_ + frame_id;
+    // has cached this page, record and return directly
+    pages_->pin_count_++;
+    replacer_->RecordAccess(frame_id);
+    replacer_->SetEvictable(frame_id, false);
+    return pg;
+  }
+}
 
 auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool { return false; }
 
