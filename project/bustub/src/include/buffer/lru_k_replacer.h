@@ -88,7 +88,7 @@ class List {
   }
 
  private:
-  int size_;
+  int size_{0};
   Node::Ptr head_;
   Node::Ptr tail_;
 };
