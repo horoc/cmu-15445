@@ -58,8 +58,8 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
 
   // flush if dirty
   Page *pg = pages_ + frame_id;
-  if (pages_->IsDirty()) {
-    disk_manager_->WritePage(pages_->page_id_, pages_->GetData());
+  if (pg->IsDirty()) {
+    disk_manager_->WritePage(pg->page_id_, pg->GetData());
   }
 
   // reset data
@@ -87,8 +87,8 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 
     // flush if dirty
     Page *pg = pages_ + frame_id;
-    if (pages_->IsDirty()) {
-      disk_manager_->WritePage(pages_->page_id_, pages_->GetData());
+    if (pg->IsDirty()) {
+      disk_manager_->WritePage(pg->page_id_, pg->GetData());
     }
 
     // read data
@@ -147,6 +147,7 @@ auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
 }
 
 void BufferPoolManagerInstance::FlushAllPgsImp() {
+  std::scoped_lock lc{latch_};
   for (size_t i = 0; i < pool_size_; i++) {
     Page *pg = pages_ + i;
     disk_manager_->WritePage(pg->page_id_, pg->GetData());
