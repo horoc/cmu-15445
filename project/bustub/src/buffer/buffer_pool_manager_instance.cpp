@@ -50,6 +50,7 @@ bool BufferPoolManagerInstance::GetPageFrameIdFromFreeListOrPool(frame_id_t *fra
 }
 
 auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
+  std::scoped_lock lc{latch_};
   // get a new page from free list or evict from pool
   frame_id_t frame_id;
   if (!GetPageFrameIdFromFreeListOrPool(&frame_id)) {
@@ -79,6 +80,7 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
 }
 
 auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
+  std::scoped_lock lc{latch_};
   frame_id_t frame_id;
   if (!page_table_->Find(page_id, frame_id)) {
     if (!GetPageFrameIdFromFreeListOrPool(&frame_id)) {
@@ -117,6 +119,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 }
 
 auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool {
+  std::scoped_lock lc{latch_};
   frame_id_t frame_id;
   if (!page_table_->Find(page_id, frame_id)) {
     return false;
@@ -135,6 +138,7 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
 }
 
 auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
+  std::scoped_lock lc{latch_};
   frame_id_t frame_id;
   if (!page_table_->Find(page_id, frame_id)) {
     return false;
@@ -156,6 +160,7 @@ void BufferPoolManagerInstance::FlushAllPgsImp() {
 }
 
 auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
+  std::scoped_lock lc{latch_};
   frame_id_t frame_id;
   if (!page_table_->Find(page_id, frame_id)) {
     return false;
