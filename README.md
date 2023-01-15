@@ -7,7 +7,7 @@ Course Home Page : https://15445.courses.cs.cmu.edu/fall2022/
 https://15445.courses.cs.cmu.edu/fall2022/assignments.html
 
 - [x] C++ Primer
-- [ ] Buffer Pool Manager
+- [x] Buffer Pool Manager
 - [ ] B+Tree Index
 - [ ] Query Execution
 - [ ] Concurrency Control
