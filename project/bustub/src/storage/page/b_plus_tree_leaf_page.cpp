@@ -54,6 +54,26 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   return array_[index].first;
 }
 
+// get value of the which is equals to input key
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::LookupKey(KeyType key, ValueType &val, const KeyComparator &comparator) -> bool {
+  int begin = 0;
+  int end = GetSize();
+  while (begin <= end) {
+    int mid = begin + (end - begin) / 2;
+    int cmp_ret = comparator(array_[mid].first, key);
+    if (cmp_ret < 0) {
+      begin = mid + 1;
+    } else if (cmp_ret > 0) {
+      end = mid - 1;
+    } else {
+      val = array_[mid].second;
+      return true;
+    }
+  }
+  return false;
+}
+
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTreeLeafPage<GenericKey<16>, RID, GenericComparator<16>>;
