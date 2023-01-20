@@ -58,7 +58,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::LookupKey(KeyType key, const KeyComparator &comparator) -> ValueType {
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueOfNearestKey(KeyType key, const KeyComparator &comparator) -> ValueType {
   // first key always empty, there should be n key and n + 1 next page pointer store in array_
   int begin = 1;
   int end = GetSize();

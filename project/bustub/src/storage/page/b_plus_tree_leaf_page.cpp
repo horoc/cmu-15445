@@ -74,6 +74,67 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::LookupKey(KeyType key, ValueType &val, const Ke
   return false;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int {
+  int begin = 0;
+  int end = GetSize();
+  while (begin <= end) {
+    int mid = begin + (end - begin) / 2;
+    int cmp_ret = comparator(array_[mid].first, key);
+    if (cmp_ret < 0) {
+      begin = mid + 1;
+    } else if (cmp_ret > 0) {
+      end = mid - 1;
+    } else {
+      // directly return since all keys are unique
+      return mid;
+    }
+  }
+
+  // all key greater than input key
+  if (end == 0) {
+    return 0;
+  }
+  // all key smaller than input key
+  return begin;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator)
+    -> bool {
+  int pos = PositionOfNearestKey(key, comparator);
+  if (comparator(array_[pos].first, key) == 0) {
+    return false;
+  }
+  int index = pos;
+  for (int i = GetSize(); i > pos; i--) {
+    array_[i] = array_[i - 1];
+  }
+  MappingType tmp(key, val);
+  array_[pos] = tmp;
+  IncreaseSize(1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::Append(const KeyType &key, const ValueType &val) {
+  MappingType tmp(key, val);
+  array_[GetSize() - 1] = tmp;
+  IncreaseSize(1);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveElementOf(int begin, int end) {
+  assert(begin > 0 && end <= GetSize() && end > begin);
+  IncreaseSize(begin - end);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+MappingType &B_PLUS_TREE_LEAF_PAGE_TYPE::KeyValuePairAt(int index) {
+  assert(index < GetSize() && index > 0);
+  return array_[index];
+}
+
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTreeLeafPage<GenericKey<16>, RID, GenericComparator<16>>;

@@ -79,6 +79,10 @@ class BPlusTree {
 
   BPlusTreePage *GetPage(page_id_t page_id);
 
+  page_id_t GetLeafPageId(const KeyType &key);
+
+  auto InsertIntoInternalPage(page_id_t page_id, const KeyType &child_key, page_id_t child_page_id) -> bool;
+
   /* Debug Routines for FREE!! */
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
 

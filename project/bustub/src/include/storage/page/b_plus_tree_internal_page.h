@@ -43,7 +43,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto ValueAt(int index) const -> ValueType;
 
   // get value of the smallest key which is greater or equals to input key
-  auto LookupKey(KeyType key, const KeyComparator &comparator) -> ValueType;
+  auto ValueOfNearestKey(KeyType key, const KeyComparator &comparator) -> ValueType;
+
 
  private:
   // Flexible array member for page data.
