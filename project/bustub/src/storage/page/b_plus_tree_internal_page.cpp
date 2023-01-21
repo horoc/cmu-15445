@@ -30,6 +30,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
   SetParentPageId(parent_id);
   SetMaxSize(max_size);
   SetSize(0);
+  SetPageType(IndexPageType::INTERNAL_PAGE);
 }
 /*
  * Helper method to get/set the key associated with input "index"(a.k.a
@@ -122,7 +123,6 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType 
   if (comparator(array_[pos].first, key) == 0) {
     return false;
   }
-  int index = pos;
   for (int i = GetSize(); i > pos; i--) {
     array_[i] = array_[i - 1];
   }

@@ -28,10 +28,11 @@ namespace bustub {
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
-  SetPageId(parent_id);
+  SetPageId(page_id);
   SetParentPageId(parent_id);
   SetMaxSize(max_size);
   SetSize(0);
+  SetPageType(IndexPageType::LEAF_PAGE);
   next_page_id_ = INVALID_PAGE_ID;
 }
 
@@ -57,8 +58,11 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const -> KeyType {
 // get value of the which is equals to input key
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::LookupKey(KeyType key, ValueType &val, const KeyComparator &comparator) -> bool {
+  if (GetSize() == 0) {
+    return false;
+  }
   int begin = 0;
-  int end = GetSize();
+  int end = GetSize() - 1;
   while (begin <= end) {
     int mid = begin + (end - begin) / 2;
     int cmp_ret = comparator(array_[mid].first, key);
@@ -76,8 +80,11 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::LookupKey(KeyType key, ValueType &val, const Ke
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int {
+  if (GetSize() == 0) {
+    return 0;
+  }
   int begin = 0;
-  int end = GetSize();
+  int end = GetSize() - 1;
   while (begin <= end) {
     int mid = begin + (end - begin) / 2;
     int cmp_ret = comparator(array_[mid].first, key);
@@ -91,24 +98,21 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::PositionOfNearestKey(KeyType key, const KeyComp
     }
   }
 
-  // all key greater than input key
-  if (end == 0) {
-    return 0;
-  }
-  // all key smaller than input key
   return begin;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator)
     -> bool {
-  int pos = PositionOfNearestKey(key, comparator);
-  if (comparator(array_[pos].first, key) == 0) {
-    return false;
-  }
-  int index = pos;
-  for (int i = GetSize(); i > pos; i--) {
-    array_[i] = array_[i - 1];
+  int pos = 0;
+  if (GetSize() != 0) {
+    pos = PositionOfNearestKey(key, comparator);
+    if (pos < GetSize() && comparator(array_[pos].first, key) == 0) {
+      return false;
+    }
+    for (int i = GetSize(); i > pos; i--) {
+      array_[i] = array_[i - 1];
+    }
   }
   MappingType tmp(key, val);
   array_[pos] = tmp;
