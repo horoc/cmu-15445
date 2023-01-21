@@ -119,14 +119,8 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &val
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::Append(const KeyType &key, const ValueType &val) {
   MappingType tmp(key, val);
-  array_[GetSize() - 1] = tmp;
+  array_[GetSize()] = tmp;
   IncreaseSize(1);
-}
-
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveElementOf(int begin, int end) {
-  assert(begin > 0 && end <= GetSize() && end > begin);
-  IncreaseSize(begin - end);
 }
 
 INDEX_TEMPLATE_ARGUMENTS

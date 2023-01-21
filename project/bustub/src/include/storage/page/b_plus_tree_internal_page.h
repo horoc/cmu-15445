@@ -40,11 +40,15 @@ class BPlusTreeInternalPage : public BPlusTreePage {
 
   auto KeyAt(int index) const -> KeyType;
   void SetKeyAt(int index, const KeyType &key);
+  void SetValueAt(int pos, const ValueType &val);
   auto ValueAt(int index) const -> ValueType;
+  MappingType &KeyValuePairAt(int index);
 
   // get value of the smallest key which is greater or equals to input key
+  auto PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int;
   auto ValueOfNearestKey(KeyType key, const KeyComparator &comparator) -> ValueType;
-
+  auto Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator) -> bool;
+  void Append(const KeyType &key, const ValueType &val);
 
  private:
   // Flexible array member for page data.

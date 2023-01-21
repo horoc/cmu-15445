@@ -58,7 +58,6 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int;
   auto Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator) -> bool;
   void Append(const KeyType &key, const ValueType &val);
-  void RemoveElementOf(int begin, int end);
 
  private:
   page_id_t next_page_id_;
