@@ -44,9 +44,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto ValueAt(int index) const -> ValueType;
   MappingType &KeyValuePairAt(int index);
 
-  // get value of the smallest key which is greater or equals to input key
-  auto PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int;
-  auto ValueOfNearestKey(KeyType key, const KeyComparator &comparator) -> ValueType;
+  auto GetKeySlotPosition(KeyType key, const KeyComparator &comparator) -> int;
+
   auto Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator) -> bool;
   void Append(const KeyType &key, const ValueType &val);
 

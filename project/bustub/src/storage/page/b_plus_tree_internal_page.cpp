@@ -38,19 +38,19 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
-  assert(index < GetSize());
+  assert(index <= GetSize());
   return array_[index].first;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
-  assert(index < GetSize());
+  assert(index <= GetSize());
   array_[index].first = key;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &value) {
-  assert(index < GetSize());
+  assert(index <= GetSize());
   array_[index].second = value;
 }
 
@@ -60,38 +60,12 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &valu
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
-  assert(index < GetSize());
+  assert(index <= GetSize());
   return array_[index].second;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueOfNearestKey(KeyType key, const KeyComparator &comparator) -> ValueType {
-  // first key always empty, there should be n key and n + 1 next page pointer store in array_
-  int begin = 1;
-  int end = GetSize();
-  while (begin <= end) {
-    int mid = begin + (end - begin) / 2;
-    int cmp_ret = comparator(array_[mid].first, key);
-    if (cmp_ret < 0) {
-      begin = mid + 1;
-    } else if (cmp_ret > 0) {
-      end = mid - 1;
-    } else {
-      // directly return since all keys are unique
-      return array_[mid].second;
-    }
-  }
-
-  // all key greater than input key
-  if (end == 1) {
-    return array_[end].second;
-  }
-  // all key smaller than input key
-  return array_[begin].second;
-}
-
-INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int {
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::GetKeySlotPosition(KeyType key, const KeyComparator &comparator) -> int {
   // first key always empty, there should be n key and n + 1 next page pointer store in array_
   int begin = 1;
   int end = GetSize();
@@ -108,22 +82,34 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::PositionOfNearestKey(KeyType key, const Key
     }
   }
 
-  // all key greater than input key
-  if (end == 1) {
-    return 1;
+  // all key smaller than input key, return last slot
+  if (begin > GetSize()) {
+    return GetSize();
   }
-  // all key smaller than input key
+
+  // all key greater than input key, return slot 0
+  if (end == 0) {
+    return 0;
+  }
+
   return begin;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator)
     -> bool {
-  int pos = PositionOfNearestKey(key, comparator);
+  int pos = GetKeySlotPosition(key, comparator);
   if (comparator(array_[pos].first, key) == 0) {
     return false;
   }
-  for (int i = GetSize(); i > pos; i--) {
+  // last slot, just append
+  if (pos == GetSize()) {
+    Append(key, val);
+    return true;
+  }
+
+  // need copy first
+  for (int i = GetSize() + 1; i > pos; i--) {
     array_[i] = array_[i - 1];
   }
   MappingType tmp(key, val);
@@ -135,7 +121,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Append(const KeyType &key, const ValueType &val) {
   MappingType tmp(key, val);
-  array_[GetSize()] = tmp;
+  array_[GetSize() + 1] = tmp;
   IncreaseSize(1);
 }
 

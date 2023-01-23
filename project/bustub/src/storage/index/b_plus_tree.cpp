@@ -139,6 +139,7 @@ bool BPLUSTREE_TYPE::InsertIntoInternalPage(page_id_t parent_page_id, const KeyT
 
     // update global root page
     UpdateRootPageId(root_page_id_ == INVALID_PAGE_ID ? 1 : 0);
+    root_page_id_ = new_root_page_id;
 
     // unpin
     buffer_pool_manager_->UnpinPage(new_root_page_id, true);
@@ -150,22 +151,23 @@ bool BPLUSTREE_TYPE::InsertIntoInternalPage(page_id_t parent_page_id, const KeyT
   InternalPage *parent_page = reinterpret_cast<InternalPage *>(buffer_pool_manager_->FetchPage(parent_page_id));
 
   // split pre-check before inserting, since internal page can only store MaxSize - 1 items
-  if (parent_page->GetSize() + 1 >= parent_page->GetMaxSize()) {
+  if (parent_page->GetSize() >= parent_page->GetMaxSize()) {
     page_id_t new_page_id;
     page_id_t old_page_id = parent_page_id;
     InternalPage *new_page = reinterpret_cast<InternalPage *>(buffer_pool_manager_->NewPage(&new_page_id));
-    new_page ->Init(new_page_id, INVALID_PAGE_ID, internal_max_size_);
+    new_page->Init(new_page_id, INVALID_PAGE_ID, internal_max_size_);
     InternalPage *old_page = parent_page;
     // for example
     // old_page -> [<Null, A>, <K1, B>, <K2, C>, <K3, D>], size = 3
     // after split, old_page -> [<Null, A>, <K1,B>], new_page -> [<NULL,C>, <K3,D>], middle key is K2
-    int begin = (old_page->GetSize() + 1) / 2;
+    int size_after_insertion = old_page->GetSize() + 1;
+    int begin = (size_after_insertion + 1) / 2;
     int end = old_page->GetSize() + 1;
     auto mid_kv = old_page->KeyValuePairAt(begin);
     for (int i = begin + 1; i < end; i++) {
       // move child page to new parent
       auto pair = old_page->KeyValuePairAt(i);
-      auto *child = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(pair.second));
+      auto child = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(pair.second));
       child->SetParentPageId(new_page_id);
       buffer_pool_manager_->UnpinPage(child->GetPageId(), true);
       new_page->Append(pair.first, pair.second);
@@ -173,15 +175,24 @@ bool BPLUSTREE_TYPE::InsertIntoInternalPage(page_id_t parent_page_id, const KeyT
     old_page->IncreaseSize(-(new_page->GetSize() + 1));  // need to remove middle key
     new_page->SetValueAt(0, mid_kv.second);
 
+    // append new key
+    auto right_page = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(right_page_id));
+    right_page->SetParentPageId(new_page_id);
+    new_page->Append(child_key, right_page_id);
+
     page_id_t old_page_parent_id = old_page->GetParentPageId();
     buffer_pool_manager_->UnpinPage(new_page_id, true);
     buffer_pool_manager_->UnpinPage(old_page_id, true);
+    buffer_pool_manager_->UnpinPage(right_page_id, true);
 
     // recursive insert new_page to old_page's parent
     return InsertIntoInternalPage(old_page_parent_id, mid_kv.first, old_page_id, new_page_id);
   } else {
+    auto right_page = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(right_page_id));
+    right_page->SetParentPageId(parent_page_id);
     parent_page->Append(child_key, right_page_id);
     buffer_pool_manager_->UnpinPage(parent_page_id, true);
+    buffer_pool_manager_->UnpinPage(right_page_id, true);
     return true;
   }
 }
@@ -459,7 +470,8 @@ page_id_t BPLUSTREE_TYPE::GetLeafPageId(const KeyType &key) {
   page_id_t cur_page_id = root_page_id_;
   while (page != nullptr && !page->IsLeafPage()) {
     auto internalPage = static_cast<InternalPage *>(page);
-    page_id_t next_page_id = static_cast<page_id_t>(internalPage->PositionOfNearestKey(key, comparator_));
+    int pos = internalPage->GetKeySlotPosition(key, comparator_);
+    page_id_t next_page_id = static_cast<page_id_t>(internalPage->ValueAt(pos));
     buffer_pool_manager_->UnpinPage(cur_page_id, false);
     cur_page_id = next_page_id;
     page = GetPage(cur_page_id);
