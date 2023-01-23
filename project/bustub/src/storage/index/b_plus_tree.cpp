@@ -219,7 +219,11 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  auto first_leaf_page_id = GetFirstLeafPageId();
+  auto page = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE *>(GetPage(first_leaf_page_id));
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, page);
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -227,7 +231,12 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  auto target_leaf_page_id = GetLeafPageId(key);
+  auto page = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE *>(GetPage(target_leaf_page_id));
+  auto index = page->PositionOfNearestKey(key, comparator_);
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, page, index);
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end
@@ -472,6 +481,25 @@ page_id_t BPLUSTREE_TYPE::GetLeafPageId(const KeyType &key) {
     auto internalPage = static_cast<InternalPage *>(page);
     int pos = internalPage->GetKeySlotPosition(key, comparator_);
     page_id_t next_page_id = static_cast<page_id_t>(internalPage->ValueAt(pos));
+    buffer_pool_manager_->UnpinPage(cur_page_id, false);
+    cur_page_id = next_page_id;
+    page = GetPage(cur_page_id);
+  }
+
+  buffer_pool_manager_->UnpinPage(cur_page_id, false);
+  return cur_page_id;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+page_id_t BPLUSTREE_TYPE::GetFirstLeafPageId() {
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return INVALID_PAGE_ID;
+  }
+  BPlusTreePage *page = GetPage(root_page_id_);
+  page_id_t cur_page_id = root_page_id_;
+  while (page != nullptr && !page->IsLeafPage()) {
+    auto internalPage = static_cast<InternalPage *>(page);
+    page_id_t next_page_id = static_cast<page_id_t>(internalPage->ValueAt(0));
     buffer_pool_manager_->UnpinPage(cur_page_id, false);
     cur_page_id = next_page_id;
     page = GetPage(cur_page_id);

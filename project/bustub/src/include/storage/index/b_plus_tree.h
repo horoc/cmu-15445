@@ -81,6 +81,8 @@ class BPlusTree {
 
   page_id_t GetLeafPageId(const KeyType &key);
 
+  page_id_t GetFirstLeafPageId();
+
   bool InsertIntoInternalPage(page_id_t parent_page_id, const KeyType &child_key, page_id_t left_page_id,
                               page_id_t right_page_id);
 

@@ -129,7 +129,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::Append(const KeyType &key, const ValueType &val
 
 INDEX_TEMPLATE_ARGUMENTS
 MappingType &B_PLUS_TREE_LEAF_PAGE_TYPE::KeyValuePairAt(int index) {
-  assert(index < GetSize() && index > 0);
+  assert(index < GetSize() && index >= 0);
   return array_[index];
 }
 
