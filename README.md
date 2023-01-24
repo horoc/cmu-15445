@@ -1,6 +1,10 @@
-# CMU-15445 Database Systems
+# CMU-15445 Database Systems (2022 Fall)
 
 Course Home Page : https://15445.courses.cs.cmu.edu/fall2022/
+
+# Homework
+
+Some SQL practies, SKIP
 
 # Project
 
