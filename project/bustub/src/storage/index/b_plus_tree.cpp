@@ -73,7 +73,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     root_page_id_ = leaf_page_id;
     UpdateRootPageId(1);
   } else {
-    page = reinterpret_cast<LeafPage *>(GetPage(leaf_page_id));
+    page = GetLeafPage(leaf_page_id);
   }
 
   // exist, directly return false
@@ -208,7 +208,104 @@ bool BPLUSTREE_TYPE::InsertIntoInternalPage(page_id_t parent_page_id, const KeyT
  * necessary.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
+void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
+  page_id_t leaf_page_id = GetLeafPageId(key);
+  if (leaf_page_id == INVALID_PAGE_ID) {
+    return;
+  }
+  auto leaf_page = GetLeafPage(leaf_page_id);
+  // delete
+  if (!leaf_page->Delete(key, comparator_)) {
+    // key not exist
+    buffer_pool_manager_->UnpinPage(leaf_page_id, false);
+    return;
+  }
+  buffer_pool_manager_->UnpinPage(leaf_page_id, true);
+
+  // balancing from node if necessary
+  BalancingFromPage(leaf_page_id, transaction);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::BalancingFromPage(page_id_t page_id, Transaction *transaction) {
+  auto page = GetPage(page_id);
+  if (page->GetSize() >= page->GetMinSize()) {
+    // not need to do balancing
+    buffer_pool_manager_->UnpinPage(page_id, false);
+    return;
+  }
+
+  // deal with root page
+  if (page->IsRootPage()) {
+    if (page->IsLeafPage() || page->GetSize() > 1) {
+      // if root is leaf page or root contains more than one key, do nothing
+      buffer_pool_manager_->UnpinPage(page_id, false);
+      return;
+    } else {
+      // if root is internal page and only contains one key
+    }
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+bool BPLUSTREE_TYPE::UpdateRootIfNecessary() {
+  /*
+   * Cases trigger root updating
+   * 1. root is leaf and doesn't contain any element
+   * 2. root is internal and has only one child
+   * IMPOSSIBLE: root is internal and doesn't contain child, since case 2 will update root to leaf page
+   */
+
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return false;
+  }
+
+  auto root_page = GetPage(root_page_id_);
+  if (root_page->IsLeafPage() && root_page->GetSize() == 0) {
+    UpdateRootPageId(0);
+    root_page_id_ = INVALID_PAGE_ID;
+  }
+
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+page_id_t BPLUSTREE_TYPE::GetPreviousPageId(page_id_t page_id) {
+  auto page = GetPage(page_id);
+
+  page_id_t parent_page_id = page->GetParentPageId();
+  if (parent_page_id == INVALID_PAGE_ID) {
+    return INVALID_PAGE_ID;
+  }
+
+  auto parent_page = GetInternalPage(page_id);
+  int pre_index = -1;
+  int cur_index = 0;
+  while (cur_index <= parent_page->GetSize()) {
+    if (parent_page->ValueAt(cur_index) == page_id) {
+      break;
+    }
+    pre_index = cur_index;
+    cur_index++;
+  }
+
+  page_id_t pre_page_id = INVALID_PAGE_ID;
+  if (pre_index != -1) {
+    pre_page_id = parent_page->ValueAt(pre_index);
+  }
+
+  buffer_pool_manager_->UnpinPage(parent_page_id, false);
+  buffer_pool_manager_->UnpinPage(page_id, false);
+
+  return pre_page_id;
+}
+INDEX_TEMPLATE_ARGUMENTS
+page_id_t BPLUSTREE_TYPE::GetNextPageId(page_id_t page_id) {
+  auto page = GetLeafPage(page_id);
+  page_id_t next_page_id = page->GetNextPageId();
+  buffer_pool_manager_->UnpinPage(page_id, false);
+  return next_page_id;
+}
 
 /*****************************************************************************
  * INDEX ITERATOR
@@ -221,7 +318,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   auto first_leaf_page_id = GetFirstLeafPageId();
-  auto page = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE *>(GetPage(first_leaf_page_id));
+  auto page = GetLeafPage(first_leaf_page_id);
   return INDEXITERATOR_TYPE(buffer_pool_manager_, page);
 }
 
@@ -233,7 +330,7 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   auto target_leaf_page_id = GetLeafPageId(key);
-  auto page = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE *>(GetPage(target_leaf_page_id));
+  auto page = GetLeafPage(target_leaf_page_id);
   auto index = page->PositionOfNearestKey(key, comparator_);
   return INDEXITERATOR_TYPE(buffer_pool_manager_, page, index);
 }
@@ -471,6 +568,18 @@ BPlusTreePage *BPLUSTREE_TYPE::GetPage(page_id_t page_id) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::GetLeafPage(page_id_t page_id) -> LeafPage * {
+  Page *pg = buffer_pool_manager_->FetchPage(page_id);
+  return reinterpret_cast<LeafPage *>(pg);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::GetInternalPage(page_id_t page_id) -> InternalPage * {
+  Page *pg = buffer_pool_manager_->FetchPage(page_id);
+  return reinterpret_cast<InternalPage *>(pg);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 page_id_t BPLUSTREE_TYPE::GetLeafPageId(const KeyType &key) {
   if (root_page_id_ == INVALID_PAGE_ID) {
     return INVALID_PAGE_ID;
@@ -508,7 +617,6 @@ page_id_t BPLUSTREE_TYPE::GetFirstLeafPageId() {
   buffer_pool_manager_->UnpinPage(cur_page_id, false);
   return cur_page_id;
 }
-
 template class BPlusTree<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTree<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTree<GenericKey<16>, RID, GenericComparator<16>>;

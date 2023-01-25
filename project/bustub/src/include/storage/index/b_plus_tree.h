@@ -79,9 +79,21 @@ class BPlusTree {
 
   BPlusTreePage *GetPage(page_id_t page_id);
 
+  auto GetLeafPage(page_id_t page_id) -> LeafPage *;
+
+  auto GetInternalPage(page_id_t page_id) -> InternalPage *;
+
   page_id_t GetLeafPageId(const KeyType &key);
 
   page_id_t GetFirstLeafPageId();
+
+  page_id_t GetPreviousPageId(page_id_t page_id);
+
+  page_id_t GetNextPageId(page_id_t page_id);
+
+  void BalancingFromPage(page_id_t page_id, Transaction *transaction);
+
+  bool UpdateRootIfNecessary();
 
   bool InsertIntoInternalPage(page_id_t parent_page_id, const KeyType &child_key, page_id_t left_page_id,
                               page_id_t right_page_id);

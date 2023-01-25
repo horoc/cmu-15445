@@ -133,6 +133,19 @@ MappingType &B_PLUS_TREE_LEAF_PAGE_TYPE::KeyValuePairAt(int index) {
   return array_[index];
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+bool B_PLUS_TREE_LEAF_PAGE_TYPE::Delete(const KeyType &key, const KeyComparator &comparator) {
+  int pos = PositionOfNearestKey(key, comparator);
+  if (pos < GetSize() && comparator(key, array_[pos].first) == 0) {
+    for (int i = pos; i < GetSize(); i++) {
+      array_[i] = array_[i + 1];
+    }
+    IncreaseSize(-1);
+    return true;
+  }
+  return false;
+}
+
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTreeLeafPage<GenericKey<16>, RID, GenericComparator<16>>;
