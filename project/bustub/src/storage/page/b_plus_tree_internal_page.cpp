@@ -131,6 +131,27 @@ MappingType &B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyValuePairAt(int index) {
   return array_[index];
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+bool B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKey(const KeyType &key, const KeyComparator &comparator) {
+  int pos = -1;
+  for (int i = 1; i < GetSize() + 1; i++) {
+    if (comparator(key, array_[i].first) == 0) {
+      pos = i;
+      break;
+    }
+  }
+
+  if (pos == -1) {
+    return false;
+  }
+
+  for (int i = pos; i < GetSize(); i++) {
+    array_[i] = array_[i + 1];
+  }
+  IncreaseSize(-1);
+  return true;
+}
+
 // valuetype for internalNode should be page id_t
 template class BPlusTreeInternalPage<GenericKey<4>, page_id_t, GenericComparator<4>>;
 template class BPlusTreeInternalPage<GenericKey<8>, page_id_t, GenericComparator<8>>;

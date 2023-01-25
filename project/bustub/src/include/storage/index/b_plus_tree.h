@@ -87,13 +87,17 @@ class BPlusTree {
 
   page_id_t GetFirstLeafPageId();
 
-  page_id_t GetPreviousPageId(page_id_t page_id);
+  void GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_page_id, KeyType &parent_key);
 
-  page_id_t GetNextPageId(page_id_t page_id);
+  void GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id, KeyType &parent_key);
 
-  void BalancingFromPage(page_id_t page_id, Transaction *transaction);
+  void ReBalancingPage(page_id_t page_id, Transaction *transaction);
 
-  bool UpdateRootIfNecessary();
+  void BorrowElement(page_id_t from, page_id_t to);
+
+  void MergeElement(page_id_t receiver_page_id, page_id_t other_page_id);
+
+  bool ResetRootIfNecessary();
 
   bool InsertIntoInternalPage(page_id_t parent_page_id, const KeyType &child_key, page_id_t left_page_id,
                               page_id_t right_page_id);

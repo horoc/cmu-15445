@@ -222,38 +222,107 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   }
   buffer_pool_manager_->UnpinPage(leaf_page_id, true);
 
-  // balancing from node if necessary
-  BalancingFromPage(leaf_page_id, transaction);
+  // re-balancing from node if necessary
+  ReBalancingPage(leaf_page_id, transaction);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::BalancingFromPage(page_id_t page_id, Transaction *transaction) {
+void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction) {
   auto page = GetPage(page_id);
+
+  // return if page has enough element
   if (page->GetSize() >= page->GetMinSize()) {
-    // not need to do balancing
     buffer_pool_manager_->UnpinPage(page_id, false);
     return;
   }
 
   // deal with root page
   if (page->IsRootPage()) {
-    if (page->IsLeafPage() || page->GetSize() > 1) {
-      // if root is leaf page or root contains more than one key, do nothing
+    buffer_pool_manager_->UnpinPage(page_id, false);
+    // check if root need to update after delete element
+    ResetRootIfNecessary();
+    return;
+  }
+
+  // try to borrow element from previous page
+  page_id_t previous_page_id;
+  KeyType previous_parent_key;
+  GetPreviousPageInfo(page_id, previous_page_id, previous_parent_key);
+  if (previous_page_id != INVALID_PAGE_ID) {
+    auto previous_page = GetPage(previous_page_id);
+    if (previous_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
+      buffer_pool_manager_->UnpinPage(previous_page_id, false);
+      BorrowElement(previous_page_id, page_id);
       return;
     } else {
-      // if root is internal page and only contains one key
+      buffer_pool_manager_->UnpinPage(previous_page_id, false);
     }
+  }
+
+  // try to borrow element from next page
+  page_id_t next_page_id;
+  KeyType next_parent_key;
+  GetNextPageInfo(page_id, next_page_id, next_parent_key);
+  if (next_page_id != INVALID_PAGE_ID) {
+    auto next_page = GetPage(next_page_id);
+    if (next_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
+      buffer_pool_manager_->UnpinPage(page_id, false);
+      buffer_pool_manager_->UnpinPage(next_page_id, false);
+      BorrowElement(next_page_id, page_id);
+      return;
+    } else {
+      buffer_pool_manager_->UnpinPage(next_page_id, false);
+    }
+  }
+
+  auto parent_page_id = page->GetParentPageId();
+
+  // try to merge with previous page
+  if (previous_page_id != INVALID_PAGE_ID) {
+    buffer_pool_manager_->UnpinPage(page_id, false);
+    MergeElement(previous_page_id, page_id);
+    auto parent_page = GetInternalPage(parent_page_id);
+    parent_page->DeleteKey(previous_parent_key, comparator_);
+    buffer_pool_manager_->UnpinPage(parent_page_id, true);
+    if (parent_page->GetSize() < parent_page->GetMinSize()) {
+      // recursive re-balancing parent
+      ReBalancingPage(parent_page_id, transaction);
+    }
+    buffer_pool_manager_->UnpinPage(page_id, true);
+    return;
+  }
+
+  // try to merge with next page
+  if (next_page_id != INVALID_PAGE_ID) {
+    buffer_pool_manager_->UnpinPage(page_id, false);
+    MergeElement(next_page_id, page_id);
+    auto parent_page = GetInternalPage(parent_page_id);
+    parent_page->DeleteKey(next_parent_key, comparator_);
+    buffer_pool_manager_->UnpinPage(parent_page_id, true);
+    if (parent_page->GetSize() < parent_page->GetMinSize()) {
+      // recursive re-balancing parent
+      ReBalancingPage(parent_page_id, transaction);
+    }
+    buffer_pool_manager_->UnpinPage(page_id, true);
+    return;
   }
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-bool BPLUSTREE_TYPE::UpdateRootIfNecessary() {
+void BPLUSTREE_TYPE::MergeElement(page_id_t receiver_page_id, page_id_t other_page_id) {}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::BorrowElement(page_id_t from, page_id_t to) {}
+
+INDEX_TEMPLATE_ARGUMENTS
+bool BPLUSTREE_TYPE::ResetRootIfNecessary() {
   /*
    * Cases trigger root updating
    * 1. root is leaf and doesn't contain any element
    * 2. root is internal and has only one child
-   * IMPOSSIBLE: root is internal and doesn't contain child, since case 2 will update root to leaf page
+   *
+   * It's impossible that root is internal and doesn't contain any child, since case 2 will update root to leaf page
    */
 
   if (root_page_id_ == INVALID_PAGE_ID) {
@@ -261,21 +330,42 @@ bool BPLUSTREE_TYPE::UpdateRootIfNecessary() {
   }
 
   auto root_page = GetPage(root_page_id_);
+  // 1. root is leaf and doesn't contain any element
   if (root_page->IsLeafPage() && root_page->GetSize() == 0) {
-    UpdateRootPageId(0);
+    buffer_pool_manager_->UnpinPage(root_page_id_, false);
     root_page_id_ = INVALID_PAGE_ID;
+    UpdateRootPageId(0);
+    return true;
   }
 
-  return true;
+  // 2. root is internal and has only one child
+  if (!root_page->IsLeafPage()) {
+    auto page = reinterpret_cast<InternalPage *>(root_page);
+    // has only one child : contains one key and right pointer is INVALID_PAGE_ID
+    if (page->GetSize() == 1 && page->ValueAt(1) == INVALID_PAGE_ID) {
+      page_id_t child_id = page->ValueAt(0);
+      buffer_pool_manager_->UnpinPage(root_page_id_, false);
+      root_page_id_ = child_id;
+      UpdateRootPageId(0);
+
+      auto child_page = GetLeafPage(child_id);
+      child_page->SetParentPageId(INVALID_PAGE_ID);
+      buffer_pool_manager_->UnpinPage(child_id, true);
+      return true;
+    }
+  }
+  return false;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-page_id_t BPLUSTREE_TYPE::GetPreviousPageId(page_id_t page_id) {
-  auto page = GetPage(page_id);
+void BPLUSTREE_TYPE::GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_page_id, KeyType &parent_key) {
+  previous_page_id = INVALID_PAGE_ID;
 
+  auto page = GetPage(page_id);
   page_id_t parent_page_id = page->GetParentPageId();
   if (parent_page_id == INVALID_PAGE_ID) {
-    return INVALID_PAGE_ID;
+    buffer_pool_manager_->UnpinPage(page_id, false);
+    return;
   }
 
   auto parent_page = GetInternalPage(page_id);
@@ -283,28 +373,46 @@ page_id_t BPLUSTREE_TYPE::GetPreviousPageId(page_id_t page_id) {
   int cur_index = 0;
   while (cur_index <= parent_page->GetSize()) {
     if (parent_page->ValueAt(cur_index) == page_id) {
+      parent_key = parent_page->KeyAt(cur_index);
+      previous_page_id = parent_page->ValueAt(pre_index);
       break;
     }
     pre_index = cur_index;
     cur_index++;
   }
 
-  page_id_t pre_page_id = INVALID_PAGE_ID;
-  if (pre_index != -1) {
-    pre_page_id = parent_page->ValueAt(pre_index);
+  buffer_pool_manager_->UnpinPage(parent_page_id, false);
+  buffer_pool_manager_->UnpinPage(page_id, false);
+  return;
+}
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id, KeyType &parent_key) {
+  next_page_id = INVALID_PAGE_ID;
+
+  auto page = GetPage(page_id);
+
+  page_id_t parent_page_id = page->GetParentPageId();
+  if (parent_page_id == INVALID_PAGE_ID) {
+    buffer_pool_manager_->UnpinPage(page_id, false);
+    return;
+  }
+
+  auto parent_page = GetInternalPage(page_id);
+  int cur_index = 0;
+  int next_index = 1;
+  while (next_index <= parent_page->GetSize()) {
+    if (parent_page->ValueAt(cur_index) == page_id) {
+      parent_key = parent_page->KeyAt(next_index);
+      next_page_id = parent_page->ValueAt(next_index);
+      break;
+    }
+    cur_index = next_index;
+    next_index++;
   }
 
   buffer_pool_manager_->UnpinPage(parent_page_id, false);
   buffer_pool_manager_->UnpinPage(page_id, false);
-
-  return pre_page_id;
-}
-INDEX_TEMPLATE_ARGUMENTS
-page_id_t BPLUSTREE_TYPE::GetNextPageId(page_id_t page_id) {
-  auto page = GetLeafPage(page_id);
-  page_id_t next_page_id = page->GetNextPageId();
-  buffer_pool_manager_->UnpinPage(page_id, false);
-  return next_page_id;
+  return;
 }
 
 /*****************************************************************************
