@@ -87,13 +87,13 @@ class BPlusTree {
 
   page_id_t GetFirstLeafPageId();
 
-  void GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_page_id, KeyType &parent_key);
+  void GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_page_id, int &parent_key_index);
 
-  void GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id, KeyType &parent_key);
+  void GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id, int &parent_key_index);
 
   void ReBalancingPage(page_id_t page_id, Transaction *transaction);
 
-  void BorrowElement(page_id_t from, page_id_t to);
+  void BorrowOneElement(page_id_t left_child, page_id_t right_child, int parent_key_index, bool is_leaf);
 
   void MergeElement(page_id_t receiver_page_id, page_id_t other_page_id);
 

@@ -57,8 +57,10 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   // get position of the smallest key which is greater or equals to input key
   auto PositionOfNearestKey(KeyType key, const KeyComparator &comparator) -> int;
   auto Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator) -> bool;
+  auto InsertAt(int pos, const KeyType &key, const ValueType &val) -> bool;
   void Append(const KeyType &key, const ValueType &val);
   bool Delete(const KeyType &key, const KeyComparator &comparator);
+  bool DeleteAt(int pos);
 
  private:
   page_id_t next_page_id_;

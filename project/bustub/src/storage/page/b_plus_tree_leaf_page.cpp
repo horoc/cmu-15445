@@ -121,6 +121,20 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &val
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertAt(int pos, const KeyType &key, const ValueType &val) -> bool {
+  if (pos < 0 || pos > GetSize()) {
+    return false;
+  }
+  for (int i = GetSize(); i > pos; i--) {
+    array_[i] = array_[i - 1];
+  }
+  MappingType tmp(key, val);
+  array_[pos] = tmp;
+  IncreaseSize(1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::Append(const KeyType &key, const ValueType &val) {
   MappingType tmp(key, val);
   array_[GetSize()] = tmp;
@@ -144,6 +158,24 @@ bool B_PLUS_TREE_LEAF_PAGE_TYPE::Delete(const KeyType &key, const KeyComparator 
     return true;
   }
   return false;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+bool B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteAt(int pos) {
+  if (pos < 0 || pos >= GetSize()) {
+    return false;
+  }
+
+  if (pos == GetSize() - 1) {
+    IncreaseSize(-1);
+    return true;
+  }
+
+  for (int i = pos; i < GetSize(); i++) {
+    array_[i] = array_[i + 1];
+  }
+  IncreaseSize(-1);
+  return true;
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;

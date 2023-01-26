@@ -47,8 +47,10 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto GetKeySlotPosition(KeyType key, const KeyComparator &comparator) -> int;
 
   auto Insert(const KeyType &key, const ValueType &val, const KeyComparator &comparator) -> bool;
+  auto InsertAt(int pos, const KeyType &key, const ValueType &val) -> bool;
   void Append(const KeyType &key, const ValueType &val);
-  bool DeleteKey(const KeyType &key, const KeyComparator &comparator);
+  bool Delete(const KeyType &key, const KeyComparator &comparator);
+  bool DeleteAt(int index);
 
  private:
   // Flexible array member for page data.

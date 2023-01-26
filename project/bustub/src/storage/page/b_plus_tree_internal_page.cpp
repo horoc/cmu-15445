@@ -119,6 +119,21 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType 
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAt(int pos, const KeyType &key, const ValueType &val) -> bool {
+  if (pos < 0 || pos > GetSize() + 1) {
+    return false;
+  }
+  // need copy first
+  for (int i = GetSize() + 1; i > pos; i--) {
+    array_[i] = array_[i - 1];
+  }
+  MappingType tmp(key, val);
+  array_[pos] = tmp;
+  IncreaseSize(1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Append(const KeyType &key, const ValueType &val) {
   MappingType tmp(key, val);
   array_[GetSize() + 1] = tmp;
@@ -132,7 +147,7 @@ MappingType &B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyValuePairAt(int index) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-bool B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKey(const KeyType &key, const KeyComparator &comparator) {
+bool B_PLUS_TREE_INTERNAL_PAGE_TYPE::Delete(const KeyType &key, const KeyComparator &comparator) {
   int pos = -1;
   for (int i = 1; i < GetSize() + 1; i++) {
     if (comparator(key, array_[i].first) == 0) {
@@ -146,6 +161,18 @@ bool B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKey(const KeyType &key, const KeyComp
   }
 
   for (int i = pos; i < GetSize(); i++) {
+    array_[i] = array_[i + 1];
+  }
+  IncreaseSize(-1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+bool B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteAt(int index) {
+  if (index < 0 || index > GetSize()) {
+    return false;
+  }
+  for (int i = index; i < GetSize(); i++) {
     array_[i] = array_[i + 1];
   }
   IncreaseSize(-1);

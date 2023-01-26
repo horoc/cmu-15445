@@ -229,6 +229,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction) {
   auto page = GetPage(page_id);
+  bool is_leaf = page->IsLeafPage();
 
   // return if page has enough element
   if (page->GetSize() >= page->GetMinSize()) {
@@ -246,14 +247,14 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
 
   // try to borrow element from previous page
   page_id_t previous_page_id;
-  KeyType previous_parent_key;
-  GetPreviousPageInfo(page_id, previous_page_id, previous_parent_key);
+  int previous_parent_index;
+  GetPreviousPageInfo(page_id, previous_page_id, previous_parent_index);
   if (previous_page_id != INVALID_PAGE_ID) {
     auto previous_page = GetPage(previous_page_id);
     if (previous_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
       buffer_pool_manager_->UnpinPage(previous_page_id, false);
-      BorrowElement(previous_page_id, page_id);
+      BorrowOneElement(previous_page_id, page_id, is_leaf, false);
       return;
     } else {
       buffer_pool_manager_->UnpinPage(previous_page_id, false);
@@ -262,14 +263,14 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
 
   // try to borrow element from next page
   page_id_t next_page_id;
-  KeyType next_parent_key;
-  GetNextPageInfo(page_id, next_page_id, next_parent_key);
+  int next_parent_index;
+  GetNextPageInfo(page_id, next_page_id, next_parent_index);
   if (next_page_id != INVALID_PAGE_ID) {
     auto next_page = GetPage(next_page_id);
     if (next_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
       buffer_pool_manager_->UnpinPage(next_page_id, false);
-      BorrowElement(next_page_id, page_id);
+      BorrowOneElement(page_id, is_leaf, true);
       return;
     } else {
       buffer_pool_manager_->UnpinPage(next_page_id, false);
@@ -283,7 +284,7 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
     buffer_pool_manager_->UnpinPage(page_id, false);
     MergeElement(previous_page_id, page_id);
     auto parent_page = GetInternalPage(parent_page_id);
-    parent_page->DeleteKey(previous_parent_key, comparator_);
+    parent_page->DeleteAt(previous_parent_index);
     buffer_pool_manager_->UnpinPage(parent_page_id, true);
     if (parent_page->GetSize() < parent_page->GetMinSize()) {
       // recursive re-balancing parent
@@ -298,7 +299,7 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
     buffer_pool_manager_->UnpinPage(page_id, false);
     MergeElement(next_page_id, page_id);
     auto parent_page = GetInternalPage(parent_page_id);
-    parent_page->DeleteKey(next_parent_key, comparator_);
+    parent_page->DeleteAt(next_parent_index);
     buffer_pool_manager_->UnpinPage(parent_page_id, true);
     if (parent_page->GetSize() < parent_page->GetMinSize()) {
       // recursive re-balancing parent
@@ -313,7 +314,57 @@ INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::MergeElement(page_id_t receiver_page_id, page_id_t other_page_id) {}
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::BorrowElement(page_id_t from, page_id_t to) {}
+void BPLUSTREE_TYPE::BorrowOneElement(page_id_t left_child, page_id_t right_child, int parent_key_index, bool is_leaf) {
+  if (is_leaf) {
+    auto left_child_page = GetLeafPage(left_child);
+    auto right_child_page = GetLeafPage(right_child);
+    auto parent_page = GetInternalPage(left_child_page->GetParentPageId());
+    if (left_child_page->GetSize() > right_child_page->GetSize()) {
+      // move last element of left child to right child's first position
+      auto pair = left_child_page->KeyValuePairAt(left_child_page->GetSize() - 1);
+      left_child_page->DeleteAt(left_child_page->GetSize() - 1);
+      right_child_page->InsertAt(0, pair.first, pair.second);
+    } else {
+      // move first element of right child to left child's last position
+      auto pair = right_child_page->KeyValuePairAt(0);
+      right_child_page->DeleteAt(0);
+      left_child_page->InsertAt(left_child_page->GetSize(), pair.first, pair.second);
+    }
+
+    // update parent
+    parent_page->SetKeyAt(parent_key_index, right_child_page->KeyAt(0));
+
+    buffer_pool_manager_->UnpinPage(left_child, true);
+    buffer_pool_manager_->UnpinPage(right_child, true);
+    buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
+  } else {
+    auto left_child_page = GetInternalPage(left_child);
+    auto right_child_page = GetInternalPage(right_child);
+    auto parent_page = GetInternalPage(left_child_page->GetParentPageId());
+    auto parent_key = parent_page->KeyAt(parent_key_index);
+    if (left_child_page->GetSize() > right_child_page->GetSize()) {
+      // move last element of left child to right child's first position
+      right_child_page->SetKeyAt(0, parent_key);
+      auto pair = left_child_page->KeyValuePairAt(left_child_page->GetSize() - 1);
+      left_child_page->DeleteAt(left_child_page->GetSize() - 1);
+      right_child_page->InsertAt(0, pair.first, pair.second);
+      parent_page->SetKeyAt(parent_key_index, pair.first);
+    } else {
+      // move first element of right child to left child's last position
+      auto pair = right_child_page->KeyValuePairAt(0);
+      left_child_page->InsertAt(left_child_page->GetSize(), parent_key, pair.second);
+      parent_page->SetKeyAt(parent_key_index, right_child_page->KeyAt(1));
+      right_child_page->DeleteAt(0);
+    }
+
+    // update parent
+    parent_page->SetKeyAt(parent_key_index, right_child_page->KeyAt(0));
+
+    buffer_pool_manager_->UnpinPage(left_child, true);
+    buffer_pool_manager_->UnpinPage(right_child, true);
+    buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
+  }
+}
 
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::ResetRootIfNecessary() {
@@ -358,7 +409,7 @@ bool BPLUSTREE_TYPE::ResetRootIfNecessary() {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_page_id, KeyType &parent_key) {
+void BPLUSTREE_TYPE::GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_page_id, int &parent_key_index) {
   previous_page_id = INVALID_PAGE_ID;
 
   auto page = GetPage(page_id);
@@ -373,7 +424,7 @@ void BPLUSTREE_TYPE::GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_
   int cur_index = 0;
   while (cur_index <= parent_page->GetSize()) {
     if (parent_page->ValueAt(cur_index) == page_id) {
-      parent_key = parent_page->KeyAt(cur_index);
+      parent_key_index = cur_index;
       previous_page_id = parent_page->ValueAt(pre_index);
       break;
     }
@@ -386,7 +437,7 @@ void BPLUSTREE_TYPE::GetPreviousPageInfo(page_id_t page_id, page_id_t &previous_
   return;
 }
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id, KeyType &parent_key) {
+void BPLUSTREE_TYPE::GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id, int &parent_key_index) {
   next_page_id = INVALID_PAGE_ID;
 
   auto page = GetPage(page_id);
@@ -402,7 +453,7 @@ void BPLUSTREE_TYPE::GetNextPageInfo(page_id_t page_id, page_id_t &next_page_id,
   int next_index = 1;
   while (next_index <= parent_page->GetSize()) {
     if (parent_page->ValueAt(cur_index) == page_id) {
-      parent_key = parent_page->KeyAt(next_index);
+      parent_key_index = next_index;
       next_page_id = parent_page->ValueAt(next_index);
       break;
     }
