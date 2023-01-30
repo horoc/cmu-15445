@@ -93,9 +93,10 @@ class BPlusTree {
 
   void ReBalancingPage(page_id_t page_id, Transaction *transaction);
 
-  void BorrowOneElement(page_id_t left_child, page_id_t right_child, int parent_key_index, bool is_leaf);
+  void BorrowOneElement(page_id_t left_child, page_id_t right_child, int parent_key_index, bool is_leaf,
+                        Transaction *transaction);
 
-  void MergeElement(page_id_t receiver_page_id, page_id_t other_page_id);
+  void MergeElement(page_id_t left_child, page_id_t right_child, int parent_key_index, Transaction *transaction);
 
   bool ResetRootIfNecessary();
 

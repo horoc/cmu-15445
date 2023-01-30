@@ -254,7 +254,7 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
     if (previous_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
       buffer_pool_manager_->UnpinPage(previous_page_id, false);
-      BorrowOneElement(previous_page_id, page_id, is_leaf, false);
+      BorrowOneElement(previous_page_id, page_id, is_leaf, false, transaction);
       return;
     } else {
       buffer_pool_manager_->UnpinPage(previous_page_id, false);
@@ -270,7 +270,7 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
     if (next_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
       buffer_pool_manager_->UnpinPage(next_page_id, false);
-      BorrowOneElement(page_id, is_leaf, true);
+      BorrowOneElement(page_id, is_leaf, true, next_parent_index, transaction);
       return;
     } else {
       buffer_pool_manager_->UnpinPage(next_page_id, false);
@@ -282,7 +282,7 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
   // try to merge with previous page
   if (previous_page_id != INVALID_PAGE_ID) {
     buffer_pool_manager_->UnpinPage(page_id, false);
-    MergeElement(previous_page_id, page_id);
+    MergeElement(previous_page_id, page_id, previous_parent_index, transaction);
     auto parent_page = GetInternalPage(parent_page_id);
     parent_page->DeleteAt(previous_parent_index);
     buffer_pool_manager_->UnpinPage(parent_page_id, true);
@@ -297,7 +297,7 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
   // try to merge with next page
   if (next_page_id != INVALID_PAGE_ID) {
     buffer_pool_manager_->UnpinPage(page_id, false);
-    MergeElement(next_page_id, page_id);
+    MergeElement(next_page_id, page_id, next_parent_index, transaction);
     auto parent_page = GetInternalPage(parent_page_id);
     parent_page->DeleteAt(next_parent_index);
     buffer_pool_manager_->UnpinPage(parent_page_id, true);
@@ -311,10 +311,40 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::MergeElement(page_id_t receiver_page_id, page_id_t other_page_id) {}
+void BPLUSTREE_TYPE::MergeElement(page_id_t left_child, page_id_t right_child, int parent_key_index,
+                                  Transaction *transaction) {
+  auto left_child_page = GetLeafPage(left_child);
+  auto right_child_page = GetLeafPage(right_child);
+  auto parent_page_id = left_child_page->GetParentPageId();
+  auto parent_page = GetInternalPage(parent_page_id);
+
+  int begin = 0;
+  int end = right_child_page->GetSize();
+  if (!left_child_page->IsLeafPage()) {
+    begin++;
+    end++;
+  }
+
+  while (begin < end) {
+    auto pair = right_child_page->KeyValuePairAt(begin);
+    left_child_page->Append(pair.first, pair.second);
+    begin++;
+  }
+
+  parent_page->DeleteAt(parent_key_index);
+  bool has_enough_element = parent_page->GetSize() < parent_page->GetMinSize();
+  buffer_pool_manager_->UnpinPage(left_child, true);
+  buffer_pool_manager_->UnpinPage(right_child, true);
+  buffer_pool_manager_->UnpinPage(parent_page->GetPageId(), true);
+
+  if (!has_enough_element) {
+    ReBalancingPage(parent_page_id, transaction);
+  }
+}
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::BorrowOneElement(page_id_t left_child, page_id_t right_child, int parent_key_index, bool is_leaf) {
+void BPLUSTREE_TYPE::BorrowOneElement(page_id_t left_child, page_id_t right_child, int parent_key_index, bool is_leaf,
+                                      Transaction *transaction) {
   if (is_leaf) {
     auto left_child_page = GetLeafPage(left_child);
     auto right_child_page = GetLeafPage(right_child);
