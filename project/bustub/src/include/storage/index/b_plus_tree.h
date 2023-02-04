@@ -37,6 +37,7 @@ INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
   using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator>;
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
+  using SafeCheckFunction = std::function<bool(BPlusTreePage *, bool)>;
 
  public:
   explicit BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
@@ -79,11 +80,17 @@ class BPlusTree {
 
   BPlusTreePage *GetPage(page_id_t page_id);
 
+  template <typename PageType>
+  auto GetPageAndLock(page_id_t page_id, Transaction *transaction, bool exclusive) -> PageType *;
+
   auto GetLeafPage(page_id_t page_id) -> LeafPage *;
 
   auto GetInternalPage(page_id_t page_id) -> InternalPage *;
 
   page_id_t GetLeafPageId(const KeyType &key);
+
+  page_id_t GetLeafPageIdByCrabbingLock(const KeyType &key, Transaction *transaction, bool exclusive,
+                                        SafeCheckFunction is_safe = AlwaysSafe);
 
   page_id_t GetFirstLeafPageId();
 
@@ -103,11 +110,88 @@ class BPlusTree {
   bool InsertIntoInternalPage(page_id_t parent_page_id, const KeyType &child_key, page_id_t left_page_id,
                               page_id_t right_page_id);
 
-  /* Debug Routines for FREE!! */
+  void InitNewRootPage();
+
+  /*
+   * Transaction related function #############################################################################
+   */
+
+  inline void LockPage(BPlusTreePage *page, bool exclusive) {
+    if (exclusive) {
+      reinterpret_cast<Page *>(page)->WLatch();
+    } else {
+      reinterpret_cast<Page *>(page)->RLatch();
+    }
+  }
+
+  inline void AddPageToTransaction(BPlusTreePage *page, Transaction *transaction) {
+    if (transaction != nullptr && page != nullptr) {
+      transaction->AddIntoPageSet(reinterpret_cast<Page *>(page));
+    }
+  }
+
+  inline void ReleasePageInTransaction(Transaction *transaction, bool exclusive) {
+    if (transaction == nullptr) {
+      return;
+    }
+    auto pages = transaction->GetPageSet();
+    for (auto it = pages->begin(); it != pages->end(); ++it) {
+      Page *pg = *it;
+      if (exclusive) {
+        pg->WUnlatch();
+      } else {
+        pg->RUnlatch();
+      }
+    }
+    pages->clear();
+  }
+
+  inline void ReleaseAndUnpinPageInTransaction(Transaction *transaction, bool exclusive) {
+    if (transaction == nullptr) {
+      return;
+    }
+    auto pages = transaction->GetPageSet();
+    for (auto it = pages->begin(); it != pages->end(); ++it) {
+      Page *pg = *it;
+      if (exclusive) {
+        pg->WUnlatch();
+      } else {
+        pg->RUnlatch();
+      }
+      // always false, dirty logic should be controlled by tree logic
+      // and if a page is marked by dirty, it won't update back to non-dirty page until flush to disk
+      buffer_pool_manager_->UnpinPage(pg->GetPageId(), false);
+    }
+    pages->clear();
+  }
+
+  static inline bool AlwaysSafe(BPlusTreePage *, bool) { return true; }
+
+  static inline bool CheckSafeByPageType(BPlusTreePage *page, bool add_element) {
+    if (page->IsLeafPage()) {
+      if (add_element) {
+        return page->GetSize() < page->GetMaxSize();
+      } else {
+        return page->GetSize() > page->GetMinSize();
+      }
+    } else {
+      if (add_element) {
+        return page->GetSize() < page->GetMaxSize();
+      } else {
+        return page->GetSize() > page->GetMinSize();
+      }
+    }
+  }
+
+  /*
+   * Debug function #############################################################################
+   */
+
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
+ private:
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -115,6 +199,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  mutable std::shared_mutex root_page_latch_;
+  mutable std::mutex test_latch_;
 };
-
 }  // namespace bustub

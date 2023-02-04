@@ -7,6 +7,7 @@
 #include "storage/page/header_page.h"
 
 namespace bustub {
+
 INDEX_TEMPLATE_ARGUMENTS
 BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
                           int leaf_max_size, int internal_max_size)
@@ -21,7 +22,10 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
  * Helper function to decide whether current b+tree is empty
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_PAGE_ID; }
+auto BPLUSTREE_TYPE::IsEmpty() const -> bool {
+  std::shared_lock<std::shared_mutex> lc(root_page_latch_);
+  return root_page_id_ == INVALID_PAGE_ID;
+}
 /*****************************************************************************
  * SEARCH
  *****************************************************************************/
@@ -35,21 +39,21 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   if (IsEmpty()) {
     return false;
   }
-  auto leaf_page_id = GetLeafPageId(key);
+  auto leaf_page_id = GetLeafPageIdByCrabbingLock(key, transaction, false);
   BPlusTreePage *page = GetPage(leaf_page_id);
 
+  bool find_key = false;
   if (page != nullptr) {
     auto leaf_page = static_cast<LeafPage *>(page);
     ValueType val;
     if (leaf_page->LookupKey(key, val, comparator_)) {
       result->push_back(val);
-      buffer_pool_manager_->UnpinPage(leaf_page_id, false);
-      return true;
+      find_key = true;
     }
+    buffer_pool_manager_->UnpinPage(leaf_page_id, false);
+    ReleaseAndUnpinPageInTransaction(transaction, false);
   }
-
-  buffer_pool_manager_->UnpinPage(leaf_page_id, false);
-  return false;
+  return find_key;
 }
 
 /*****************************************************************************
@@ -64,28 +68,26 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  auto leaf_page_id = GetLeafPageId(key);
-  LeafPage *page = nullptr;
   // if empty tree
-  if (leaf_page_id == INVALID_PAGE_ID) {
-    page = reinterpret_cast<LeafPage *>(buffer_pool_manager_->NewPage(&leaf_page_id));
-    page->Init(leaf_page_id, INVALID_PAGE_ID, leaf_max_size_);
-    root_page_id_ = leaf_page_id;
-    UpdateRootPageId(1);
-  } else {
-    page = GetLeafPage(leaf_page_id);
+  if (IsEmpty()) {
+    InitNewRootPage();
   }
+
+  auto leaf_page_id = GetLeafPageIdByCrabbingLock(key, transaction, true, BPLUSTREE_TYPE::CheckSafeByPageType);
+  LeafPage *page = GetLeafPage(leaf_page_id);
 
   // exist, directly return false
   ValueType tmp_val;
   if (page->LookupKey(key, tmp_val, comparator_)) {
     buffer_pool_manager_->UnpinPage(leaf_page_id, false);
+    ReleaseAndUnpinPageInTransaction(transaction, true);
     return false;
   }
 
   // insert to leaf
   if (!page->Insert(key, value, comparator_)) {
     buffer_pool_manager_->UnpinPage(leaf_page_id, false);
+    ReleaseAndUnpinPageInTransaction(transaction, true);
     return false;
   };
 
@@ -116,6 +118,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     buffer_pool_manager_->UnpinPage(old_page_id, true);
   }
 
+  ReleaseAndUnpinPageInTransaction(transaction, true);
   return true;
 }
 
@@ -751,6 +754,27 @@ void BPLUSTREE_TYPE::ToString(BPlusTreePage *page, BufferPoolManager *bpm) const
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+template <typename PageType>
+auto BPLUSTREE_TYPE::GetPageAndLock(page_id_t page_id, Transaction *transaction, bool exclusive) -> PageType * {
+  Page *pg = buffer_pool_manager_->FetchPage(page_id);
+  if (pg == nullptr) {
+    return nullptr;
+  }
+
+  if (exclusive) {
+    pg->WLatch();
+  } else {
+    pg->RLatch();
+  }
+
+  if (transaction != nullptr) {
+    transaction->AddIntoPageSet(pg);
+  }
+
+  return reinterpret_cast<PageType *>(pg);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 BPlusTreePage *BPLUSTREE_TYPE::GetPage(page_id_t page_id) {
   Page *pg = buffer_pool_manager_->FetchPage(page_id);
   return reinterpret_cast<BPlusTreePage *>(pg);
@@ -789,6 +813,43 @@ page_id_t BPLUSTREE_TYPE::GetLeafPageId(const KeyType &key) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+page_id_t BPLUSTREE_TYPE::GetLeafPageIdByCrabbingLock(const KeyType &key, Transaction *transaction, bool exclusive,
+                                                      SafeCheckFunction is_safe) {
+  if (transaction == nullptr) {
+    return GetLeafPageId(key);
+  }
+
+  if (IsEmpty()) {
+    return INVALID_PAGE_ID;
+  }
+
+  auto page = GetPage(root_page_id_);
+  LockPage(page, exclusive);
+  AddPageToTransaction(page, transaction);
+  page_id_t cur_page_id = root_page_id_;
+  while (page != nullptr && !page->IsLeafPage()) {
+    auto internalPage = static_cast<InternalPage *>(page);
+    int pos = internalPage->GetKeySlotPosition(key, comparator_);
+
+    page_id_t next_page_id = static_cast<page_id_t>(internalPage->ValueAt(pos));
+    if (next_page_id == INVALID_PAGE_ID) {
+      break;
+    }
+    auto next_page = GetPage(next_page_id);
+    LockPage(next_page, exclusive);
+    if (is_safe(next_page, false)) {
+      ReleaseAndUnpinPageInTransaction(transaction, exclusive);
+    }
+    AddPageToTransaction(next_page, transaction);
+
+    page = next_page;
+    cur_page_id = next_page_id;
+  }
+
+  return cur_page_id;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 page_id_t BPLUSTREE_TYPE::GetFirstLeafPageId() {
   if (root_page_id_ == INVALID_PAGE_ID) {
     return INVALID_PAGE_ID;
@@ -806,6 +867,21 @@ page_id_t BPLUSTREE_TYPE::GetFirstLeafPageId() {
   buffer_pool_manager_->UnpinPage(cur_page_id, false);
   return cur_page_id;
 }
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::InitNewRootPage() {
+  root_page_latch_.lock();
+  // double check
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    page_id_t page_id;
+    LeafPage *page = reinterpret_cast<LeafPage *>(buffer_pool_manager_->NewPage(&page_id));
+    page->Init(page_id, INVALID_PAGE_ID, leaf_max_size_);
+    root_page_id_ = page_id;
+    UpdateRootPageId(1);
+  }
+  root_page_latch_.unlock();
+}
+
 template class BPlusTree<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTree<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTree<GenericKey<16>, RID, GenericComparator<16>>;

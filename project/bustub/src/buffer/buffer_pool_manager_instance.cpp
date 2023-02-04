@@ -129,7 +129,10 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
   if (pg->pin_count_ == 0) {
     return false;
   }
-  pg->is_dirty_ = is_dirty;
+  // if it is not dirty and want to mark as dirty
+  if (is_dirty && !pg->is_dirty_) {
+    pg->is_dirty_ = is_dirty;
+  }
   pg->pin_count_--;
   if (pg->pin_count_ == 0) {
     replacer_->SetEvictable(frame_id, true);
