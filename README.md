@@ -16,7 +16,7 @@ https://15445.courses.cs.cmu.edu/fall2022/assignments.html
   - [x] Query
   - [x] Insert
   - [x] Iterator
-  - [ ] Delete
+  - [x] Delete
   - [ ] Concurrent
 - [ ] Query Execution
 - [ ] Concurrency Control
