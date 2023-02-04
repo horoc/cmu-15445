@@ -51,8 +51,8 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
       find_key = true;
     }
     buffer_pool_manager_->UnpinPage(leaf_page_id, false);
-    ReleaseAndUnpinPageInTransaction(transaction, false);
   }
+  ReleaseAndUnpinPageInTransaction(transaction, false);
   return find_key;
 }
 
@@ -73,7 +73,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     InitNewRootPage();
   }
 
-  auto leaf_page_id = GetLeafPageIdByCrabbingLock(key, transaction, true, BPLUSTREE_TYPE::CheckSafeByPageType);
+  auto leaf_page_id = GetLeafPageIdByCrabbingLock(key, transaction, true, BPLUSTREE_TYPE::IsAddElementSafe);
   LeafPage *page = GetLeafPage(leaf_page_id);
 
   // exist, directly return false
@@ -212,8 +212,9 @@ bool BPLUSTREE_TYPE::InsertIntoInternalPage(page_id_t parent_page_id, const KeyT
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
-  page_id_t leaf_page_id = GetLeafPageId(key);
+  page_id_t leaf_page_id = GetLeafPageIdByCrabbingLock(key, transaction, true, BPLUSTREE_TYPE::IsDeleteElementSafe);
   if (leaf_page_id == INVALID_PAGE_ID) {
+    ReleaseAndUnpinPageInTransaction(transaction, true);
     return;
   }
   auto leaf_page = GetLeafPage(leaf_page_id);
@@ -221,12 +222,14 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   if (!leaf_page->Delete(key, comparator_)) {
     // key not exist
     buffer_pool_manager_->UnpinPage(leaf_page_id, false);
+    ReleaseAndUnpinPageInTransaction(transaction, true);
     return;
   }
   buffer_pool_manager_->UnpinPage(leaf_page_id, true);
 
   // re-balancing from node if necessary
   ReBalancingPage(leaf_page_id, transaction);
+  ReleaseAndUnpinPageInTransaction(transaction, true);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -253,14 +256,11 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
   int previous_parent_index;
   GetPreviousPageInfo(page_id, previous_page_id, previous_parent_index);
   if (previous_page_id != INVALID_PAGE_ID) {
-    auto previous_page = GetPage(previous_page_id);
+    auto previous_page = GetPageAndLock<BPlusTreePage>(previous_page_id, transaction, true);
     if (previous_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
-      buffer_pool_manager_->UnpinPage(previous_page_id, false);
       BorrowOneElement(previous_page_id, page_id, is_leaf, false, transaction);
       return;
-    } else {
-      buffer_pool_manager_->UnpinPage(previous_page_id, false);
     }
   }
 
@@ -269,14 +269,11 @@ void BPLUSTREE_TYPE::ReBalancingPage(page_id_t page_id, Transaction *transaction
   int next_parent_index;
   GetNextPageInfo(page_id, next_page_id, next_parent_index);
   if (next_page_id != INVALID_PAGE_ID) {
-    auto next_page = GetPage(next_page_id);
+    auto next_page = GetPageAndLock<BPlusTreePage>(next_page_id, transaction, true);
     if (next_page->GetSize() + page->GetSize() >= 2 * page->GetMinSize()) {
       buffer_pool_manager_->UnpinPage(page_id, false);
-      buffer_pool_manager_->UnpinPage(next_page_id, false);
       BorrowOneElement(page_id, is_leaf, true, next_parent_index, transaction);
       return;
-    } else {
-      buffer_pool_manager_->UnpinPage(next_page_id, false);
     }
   }
 
@@ -335,6 +332,7 @@ void BPLUSTREE_TYPE::MergeElement(page_id_t left_child, page_id_t right_child, i
   }
 
   parent_page->DeleteAt(parent_key_index);
+  RecordDeletePageInTransaction(right_child_page, transaction);
   bool has_enough_element = parent_page->GetSize() < parent_page->GetMinSize();
   buffer_pool_manager_->UnpinPage(left_child, true);
   buffer_pool_manager_->UnpinPage(right_child, true);
@@ -825,7 +823,7 @@ page_id_t BPLUSTREE_TYPE::GetLeafPageIdByCrabbingLock(const KeyType &key, Transa
 
   auto page = GetPage(root_page_id_);
   LockPage(page, exclusive);
-  AddPageToTransaction(page, transaction);
+  RecordPageInTransaction(page, transaction);
   page_id_t cur_page_id = root_page_id_;
   while (page != nullptr && !page->IsLeafPage()) {
     auto internalPage = static_cast<InternalPage *>(page);
@@ -837,10 +835,10 @@ page_id_t BPLUSTREE_TYPE::GetLeafPageIdByCrabbingLock(const KeyType &key, Transa
     }
     auto next_page = GetPage(next_page_id);
     LockPage(next_page, exclusive);
-    if (is_safe(next_page, false)) {
+    if (is_safe(next_page)) {
       ReleaseAndUnpinPageInTransaction(transaction, exclusive);
     }
-    AddPageToTransaction(next_page, transaction);
+    RecordPageInTransaction(next_page, transaction);
 
     page = next_page;
     cur_page_id = next_page_id;
@@ -878,6 +876,7 @@ void BPLUSTREE_TYPE::InitNewRootPage() {
     page->Init(page_id, INVALID_PAGE_ID, leaf_max_size_);
     root_page_id_ = page_id;
     UpdateRootPageId(1);
+    buffer_pool_manager_->UnpinPage(page_id, true);
   }
   root_page_latch_.unlock();
 }

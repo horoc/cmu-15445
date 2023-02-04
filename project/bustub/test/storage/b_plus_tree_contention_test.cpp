@@ -74,7 +74,7 @@ bool BPlusTreeLockBenchmarkCall(size_t num_threads, int leaf_node_size, bool wit
   return success;
 }
 
-TEST(BPlusTreeTest, DISABLED_BPlusTreeContentionBenchmark) {  // NOLINT
+TEST(BPlusTreeTest, BPlusTreeContentionBenchmark) {  // NOLINT
   std::vector<size_t> time_ms_with_mutex;
   std::vector<size_t> time_ms_wo_mutex;
   for (size_t iter = 0; iter < 20; iter++) {

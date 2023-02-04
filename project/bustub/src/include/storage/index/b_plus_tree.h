@@ -37,7 +37,7 @@ INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
   using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator>;
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
-  using SafeCheckFunction = std::function<bool(BPlusTreePage *, bool)>;
+  using SafeCheckFunction = std::function<bool(BPlusTreePage *)>;
 
  public:
   explicit BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
@@ -124,9 +124,23 @@ class BPlusTree {
     }
   }
 
-  inline void AddPageToTransaction(BPlusTreePage *page, Transaction *transaction) {
+  inline void UnlockPage(BPlusTreePage *page, bool exclusive) {
+    if (exclusive) {
+      reinterpret_cast<Page *>(page)->WUnlatch();
+    } else {
+      reinterpret_cast<Page *>(page)->RUnlatch();
+    }
+  }
+
+  inline void RecordPageInTransaction(BPlusTreePage *page, Transaction *transaction) {
     if (transaction != nullptr && page != nullptr) {
       transaction->AddIntoPageSet(reinterpret_cast<Page *>(page));
+    }
+  }
+
+  inline void RecordDeletePageInTransaction(BPlusTreePage *page, Transaction *transaction) {
+    if (transaction != nullptr && page != nullptr) {
+      transaction->AddIntoDeletedPageSet(page->GetPageId());
     }
   }
 
@@ -163,25 +177,26 @@ class BPlusTree {
       buffer_pool_manager_->UnpinPage(pg->GetPageId(), false);
     }
     pages->clear();
+
+    auto delete_pages = transaction->GetDeletedPageSet();
+    for (auto it = delete_pages->begin(); it != delete_pages->end(); ++it) {
+      auto page_id = *it;
+      buffer_pool_manager_->DeletePage(page_id);
+    }
+    delete_pages->clear();
   }
 
-  static inline bool AlwaysSafe(BPlusTreePage *, bool) { return true; }
+  static inline bool AlwaysSafe(BPlusTreePage *) { return true; }
 
-  static inline bool CheckSafeByPageType(BPlusTreePage *page, bool add_element) {
+  static inline bool IsAddElementSafe(BPlusTreePage *page) {
     if (page->IsLeafPage()) {
-      if (add_element) {
-        return page->GetSize() < page->GetMaxSize();
-      } else {
-        return page->GetSize() > page->GetMinSize();
-      }
+      return page->GetSize() < page->GetMaxSize() - 1;
     } else {
-      if (add_element) {
-        return page->GetSize() < page->GetMaxSize();
-      } else {
-        return page->GetSize() > page->GetMinSize();
-      }
+      return page->GetSize() < page->GetMaxSize();
     }
   }
+
+  static inline bool IsDeleteElementSafe(BPlusTreePage *page) { return page->GetSize() > page->GetMinSize(); }
 
   /*
    * Debug function #############################################################################
