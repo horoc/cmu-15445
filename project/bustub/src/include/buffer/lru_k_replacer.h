@@ -28,10 +28,10 @@ struct Node {
   Node(frame_id_t frame_id) : frame_id_(frame_id){};
   frame_id_t frame_id_;
   size_t frequence_{0};
-  bool in_cache_;
-  bool evictable_;
-  Ptr prev_;
-  Ptr next_;
+  bool in_cache_{false};
+  bool evictable_{true};
+  Ptr prev_{nullptr};
+  Ptr next_{nullptr};
 };
 
 class List {
@@ -89,8 +89,8 @@ class List {
 
  private:
   int size_{0};
-  Node::Ptr head_;
-  Node::Ptr tail_;
+  Node::Ptr head_{nullptr};
+  Node::Ptr tail_{nullptr};
 };
 
 /**
